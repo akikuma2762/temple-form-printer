@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>表單列印工具 V3</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>表單列印工具 V4</title>
     <!-- SheetJS for Excel -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- jsPDF and dom-to-image for high-fidelity PDF generation -->
@@ -14,50 +14,76 @@
     <style>
         :root {
             --a4-width-px: 794px;
-            /* 210mm @ 96dpi */
             --a4-height-px: 1123px;
-            /* 297mm @ 96dpi */
             --a4-width: 210mm;
             --a4-height: 297mm;
+            --sidebar-width: 60px;
+        }
+
+        * {
+            box-sizing: border-box;
         }
 
         body {
             margin: 0;
-            padding: 20px;
+            padding: 0;
             background-color: #e9ecef;
             font-family: "Microsoft JhengHei", Arial, sans-serif;
             color: #333;
-        }
-
-        /* Tabs Navigation */
-        .tabs {
             display: flex;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #ddd;
+            min-height: 100vh;
         }
 
-        .tab-btn {
-            padding: 10px 20px;
-            cursor: pointer;
+        /* ===== Sidebar Navigation ===== */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: #2c3e50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 20px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            z-index: 1000;
+        }
+
+        .nav-btn {
+            width: 50px;
+            height: 50px;
             border: none;
-            background: none;
-            font-size: 16px;
-            font-weight: bold;
-            color: #666;
+            background: transparent;
+            color: #bdc3c7;
+            font-size: 24px;
+            cursor: pointer;
+            border-radius: 10px;
+            margin-bottom: 10px;
             transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        .tab-btn.active {
-            color: #2196F3;
-            border-bottom: 3px solid #2196F3;
+        .nav-btn:hover {
+            background: #34495e;
+            color: white;
         }
 
-        .tab-btn:hover {
-            color: #2196F3;
-            background-color: rgba(33, 150, 243, 0.05);
+        .nav-btn.active {
+            background: #3498db;
+            color: white;
         }
 
-        /* View Containers */
+        /* ===== Main Content Area ===== */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            flex: 1;
+            padding: 20px;
+            width: calc(100% - var(--sidebar-width));
+        }
+
+        /* ===== View Sections ===== */
         .view-section {
             display: none;
         }
@@ -66,22 +92,22 @@
             display: block;
         }
 
-        /* Layout Container */
+        /* ===== Layout Wrapper ===== */
         .layout-wrapper {
             display: flex;
             gap: 20px;
             align-items: flex-start;
+            flex-wrap: wrap;
         }
 
-        /* Side Panel */
+        /* ===== Side Panel ===== */
         .side-panel {
-            width: 300px;
+            width: 280px;
+            min-width: 280px;
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            position: sticky;
-            top: 20px;
         }
 
         .control-group {
@@ -130,7 +156,13 @@
             opacity: 0.7;
         }
 
-        /* A4 Page Styles */
+        /* ===== A4 Page Container ===== */
+        .page-wrapper {
+            flex: 1;
+            min-width: 300px;
+            overflow: auto;
+        }
+
         .page-container {
             width: var(--a4-width);
             height: var(--a4-height);
@@ -138,17 +170,14 @@
             position: relative;
             box-shadow: 0 0 15px rgba(0, 0, 0, 0.15);
             overflow: hidden;
-            margin-bottom: 20px;
-            /* Ensure white background for PDF */
             background-color: #ffffff;
-            /* Visual A4 boundary indicator */
             border: 2px dashed #ff6b6b;
+            transform-origin: top left;
         }
 
         .background-img {
             width: 100%;
             height: 100%;
-            /* Changed from contain to cover to fill A4 without white margins */
             object-fit: cover;
             position: absolute;
             top: 0;
@@ -156,31 +185,29 @@
             z-index: 0;
         }
 
-        /* Draggable / Label Styles */
+        /* ===== Draggable Labels ===== */
         .draggable {
             position: absolute;
             border: 2px dashed #2196F3;
             background: rgba(33, 150, 243, 0.1);
             cursor: move;
             z-index: 1;
-            /* Vertical Text Layout */
             writing-mode: vertical-rl;
             text-orientation: upright;
-            /* Centering */
             display: flex;
             align-items: center;
             justify-content: center;
             text-align: center;
-
             font-size: 20px;
             width: 60px;
             height: 200px;
             overflow: hidden;
             resize: both;
+            touch-action: none;
+            /* Important for touch dragging */
         }
 
         .draggable .content {
-            /* Force single line (column) in vertical mode */
             white-space: nowrap;
             pointer-events: none;
         }
@@ -199,7 +226,7 @@
             writing-mode: horizontal-tb;
         }
 
-        /* Clean styles for export (Applied dynamically) */
+        /* Clean styles for export */
         .draggable.clean-mode {
             border: none !important;
             background: transparent !important;
@@ -210,30 +237,26 @@
             display: none !important;
         }
 
-        /* Hide dashed border in export mode */
         .page-container.export-mode {
             border: none !important;
         }
 
-        /* Address-specific: Top alignment + horizontal centering */
         .draggable.top-align {
             justify-content: flex-start;
-            /* Top aligned in vertical mode */
             align-items: center;
-            /* Horizontally centered in vertical mode */
         }
 
-        /* Hidden Buffer for rendering one page at a time */
+        /* ===== Hidden Buffer ===== */
         #render-buffer {
             position: fixed;
             top: 0;
             left: 0;
             opacity: 0;
-            /* Fully transparent but rendered */
             pointer-events: none;
             z-index: -1000;
         }
 
+        /* ===== Alert Box ===== */
         .alert {
             padding: 10px;
             background-color: #fff3cd;
@@ -244,7 +267,7 @@
             font-size: 0.9em;
         }
 
-        /* Progress Overlay */
+        /* ===== Progress Overlay ===== */
         #progress-overlay {
             display: none;
             position: fixed;
@@ -281,95 +304,182 @@
             font-size: 18px;
             font-weight: bold;
         }
+
+        /* ===== Preview List ===== */
+        #preview-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .preview-card {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+        }
+
+        .preview-card-header {
+            padding: 8px;
+            background: #eee;
+            font-weight: bold;
+        }
+
+        /* ===== RWD: Mobile Styles ===== */
+        @media (max-width: 900px) {
+            .layout-wrapper {
+                flex-direction: column;
+            }
+
+            .side-panel {
+                width: 100%;
+                min-width: unset;
+            }
+
+            .page-wrapper {
+                width: 100%;
+                overflow-x: auto;
+            }
+
+            .page-container {
+                transform: scale(0.45);
+                margin-bottom: -55%;
+            }
+        }
+
+        @media (max-width: 600px) {
+
+            /* Move sidebar to bottom on mobile */
+            .sidebar {
+                width: 100%;
+                height: 60px;
+                flex-direction: row;
+                justify-content: center;
+                bottom: 0;
+                top: auto;
+                padding: 5px 0;
+            }
+
+            .nav-btn {
+                margin: 0 10px;
+            }
+
+            .main-content {
+                margin-left: 0;
+                margin-bottom: 70px;
+                width: 100%;
+                padding: 10px;
+            }
+
+            .page-container {
+                transform: scale(0.35);
+                margin-bottom: -65%;
+            }
+
+            .side-panel h3 {
+                font-size: 1.1em;
+            }
+        }
     </style>
 </head>
 
 <body>
 
-    <!-- Progress Overlay -->
-    <div id="progress-overlay">
-        <div class="status-text" id="status-text">準備中...</div>
-        <div class="progress-bar">
-            <div class="progress-fill" id="progress-fill"></div>
+    <!-- Sidebar Navigation -->
+    <nav class="sidebar">
+        <button class="nav-btn active" onclick="switchView('config')" title="版面設定">
+            ⚙️
+        </button>
+        <button class="nav-btn" onclick="switchView('preview')" title="預覽與下載">
+            📄
+        </button>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+
+        <!-- Progress Overlay -->
+        <div id="progress-overlay">
+            <div class="status-text" id="status-text">準備中...</div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div style="margin-top: 10px; font-size: 14px; color: #ccc;">請勿關閉視窗</div>
         </div>
-        <div style="margin-top: 10px; font-size: 14px; color: #ccc;">為了避免瀏覽器當機，將會一頁一頁處理，請勿關閉視窗。</div>
-    </div>
 
-    <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('config')">1. 版面設定 (Layout)</button>
-        <button class="tab-btn" onclick="switchTab('preview')">2. 預覽與下載 (Preview & Download)</button>
-    </div>
+        <!-- VIEW 1: CONFIGURATION -->
+        <div id="view-config" class="view-section active">
+            <div class="layout-wrapper">
+                <div class="side-panel">
+                    <h3>⚙️ 版面設定</h3>
 
-    <!-- VIEW 1: CONFIGURATION -->
-    <div id="view-config" class="view-section active">
-        <div class="layout-wrapper">
-            <div class="side-panel">
-                <h3>版面設定</h3>
+                    <div class="alert">
+                        請先上傳背景圖片，確保 PDF 輸出正確。
+                    </div>
 
-                <div class="alert">
-                    注意：為了確保 PDF 輸出正確，請務必在此處選取您的背景圖片。
+                    <div class="control-group">
+                        <label>1. 上傳背景圖片</label>
+                        <input type="file" id="bgInput" accept="image/*" onchange="handleBgUpload(this)">
+                    </div>
+
+                    <div class="control-group">
+                        <label>2. 調整標籤位置</label>
+                        <p style="font-size: 0.85em; color: #666;">
+                            拖曳調整「姓名」與「地址」的位置。<br>
+                            右下角可調整大小。
+                        </p>
+                    </div>
+
+                    <button class="secondary" onclick="resetPositions()">重置位置</button>
                 </div>
 
-                <div class="control-group">
-                    <label>1. 上傳背景圖片</label>
-                    <input type="file" id="bgInput" accept="image/*" onchange="handleBgUpload(this)">
-                </div>
+                <div class="page-wrapper">
+                    <div class="page-container" id="editor-canvas">
+                        <img id="editor-bg" class="background-img" alt="Background">
 
-                <div class="control-group">
-                    <label>2. 調整標籤</label>
-                    <p style="font-size: 0.9em; color: #666;">
-                        請在右側預覽圖中拖曳調整「姓名」與「地址」的位置。<br>
-                        文字已預設為置中對齊。
+                        <div class="draggable" id="drag-name" style="top: 100px; left: 140mm;">
+                            <div class="grid-label">姓名</div>
+                            <span class="content">姓名測試</span>
+                        </div>
+
+                        <div class="draggable top-align" id="drag-address" style="top: 100px; left: 170mm;">
+                            <div class="grid-label">地址</div>
+                            <span class="content">地址測試</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 2: PREVIEW & DOWNLOAD -->
+        <div id="view-preview" class="view-section">
+            <div class="layout-wrapper">
+                <div class="side-panel">
+                    <h3>📄 資料處理</h3>
+                    <div class="control-group">
+                        <label>1. 上傳資料 (Excel/CSV)</label>
+                        <input type="file" id="dataReader" accept=".xlsx, .xls, .csv" onchange="handleDataUpload(this)">
+                    </div>
+
+                    <div class="control-group" id="data-stats" style="display:none;">
+                        <label>資料狀態</label>
+                        <p id="record-count">已載入 0 筆資料</p>
+                    </div>
+
+                    <button class="success" onclick="startBatchPDF()" id="btn-download" disabled>下載合併 PDF</button>
+                    <p style="font-size: 0.8em; color: #888;">
+                        系統會逐頁生成，請耐心等候。
                     </p>
                 </div>
 
-                <button class="secondary" onclick="resetPositions()">重置位置</button>
-            </div>
-
-            <!-- Master Editor Canvas -->
-            <div class="page-container" id="editor-canvas">
-                <img id="editor-bg" class="background-img" alt="Background Preview">
-
-                <div class="draggable" id="drag-name" style="top: 100px; left: 140mm;">
-                    <div class="grid-label">姓名</div>
-                    <span class="content">姓名測試</span>
-                </div>
-
-                <div class="draggable top-align" id="drag-address" style="top: 100px; left: 170mm;">
-                    <div class="grid-label">地址</div>
-                    <span class="content">地址測試<br>範例資料</span>
+                <div id="preview-list">
+                    <div style="padding: 40px; text-align: center; color: #888;">
+                        請先上傳資料檔案
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- VIEW 2: PREVIEW & DOWNLOAD -->
-    <div id="view-preview" class="view-section">
-        <div class="layout-wrapper">
-            <div class="side-panel">
-                <h3>資料處理</h3>
-                <div class="control-group">
-                    <label>1. 上傳資料 (Excel/CSV)</label>
-                    <input type="file" id="dataReader" accept=".xlsx, .xls, .csv" onchange="handleDataUpload(this)">
-                </div>
-
-                <div class="control-group" id="data-stats" style="display:none;">
-                    <label>資料狀態</label>
-                    <p id="record-count">已載入 0 筆資料</p>
-                </div>
-
-                <button class="success" onclick="startBatchPDF()" id="btn-download" disabled>下載合併 PDF</button>
-                <p style="font-size: 0.8em; color: #888;">
-                    注意：系統會逐頁生成以確保 150+ 頁的穩定性。請耐心等候。
-                </p>
-            </div>
-
-            <div id="preview-list">
-                <div style="padding: 40px; text-align: center; color: #888;">
-                    請先上傳資料檔案以檢視預覽。
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- Hidden Buffer Container -->
@@ -381,22 +491,21 @@
         let loadedData = [];
 
         // --- Initialization ---
-        // Try fallback image
         const fallbackImg = './1768757647251.jpg';
         const imgEl = document.getElementById('editor-bg');
-        imgEl.onerror = () => { console.log("Default image not found, user needs to upload."); };
+        imgEl.onerror = () => { console.log("Default image not found"); };
         imgEl.src = fallbackImg;
 
-        // --- Tabs ---
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        // --- View Switching ---
+        function switchView(viewName) {
+            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.view-section').forEach(view => view.classList.remove('active'));
 
-            if (tabName === 'config') {
-                document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+            if (viewName === 'config') {
+                document.querySelector('.nav-btn:nth-child(1)').classList.add('active');
                 document.getElementById('view-config').classList.add('active');
             } else {
-                document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+                document.querySelector('.nav-btn:nth-child(2)').classList.add('active');
                 document.getElementById('view-preview').classList.add('active');
                 updatePreview();
             }
@@ -414,37 +523,56 @@
             }
         }
 
-        // --- Draggable Logic ---
+        // --- Draggable Logic (Mouse + Touch) ---
         function makeDraggable(elmnt) {
-            var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-            elmnt.onmousedown = dragMouseDown;
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
 
-            function dragMouseDown(e) {
+            // Mouse events
+            elmnt.onmousedown = dragStart;
+            // Touch events
+            elmnt.ontouchstart = dragStart;
+
+            function dragStart(e) {
                 const rect = elmnt.getBoundingClientRect();
-                const isResizing = (e.clientX > rect.right - 20 && e.clientY > rect.bottom - 20);
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+                // Check if resizing (bottom-right corner)
+                const isResizing = (clientX > rect.right - 25 && clientY > rect.bottom - 25);
                 if (isResizing) return;
-                e = e || window.event;
+
                 e.preventDefault();
-                pos3 = e.clientX;
-                pos4 = e.clientY;
-                document.onmouseup = closeDragElement;
-                document.onmousemove = elementDrag;
+                pos3 = clientX;
+                pos4 = clientY;
+
+                if (e.touches) {
+                    document.ontouchend = dragEnd;
+                    document.ontouchmove = dragMove;
+                } else {
+                    document.onmouseup = dragEnd;
+                    document.onmousemove = dragMove;
+                }
             }
 
-            function elementDrag(e) {
-                e = e || window.event;
+            function dragMove(e) {
                 e.preventDefault();
-                pos1 = pos3 - e.clientX;
-                pos2 = pos4 - e.clientY;
-                pos3 = e.clientX;
-                pos4 = e.clientY;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+                pos1 = pos3 - clientX;
+                pos2 = pos4 - clientY;
+                pos3 = clientX;
+                pos4 = clientY;
+
                 elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
                 elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
             }
 
-            function closeDragElement() {
+            function dragEnd() {
                 document.onmouseup = null;
                 document.onmousemove = null;
+                document.ontouchend = null;
+                document.ontouchmove = null;
             }
         }
 
@@ -515,7 +643,6 @@
         function createPageElement(row, layout, forExport) {
             let nameVal = '';
             let addrVal = '';
-            // Fuzzy match keys
             for (let k in row) {
                 const key = k.toString().trim();
                 if (key.includes('姓名') || key.toLowerCase() === 'name') nameVal = row[k];
@@ -561,58 +688,48 @@
             }
 
             const layout = getLayoutConfig();
-            const previewLimit = Math.min(loadedData.length, 5);
+            const previewLimit = Math.min(loadedData.length, 3);
 
             for (let i = 0; i < previewLimit; i++) {
-                // For preview, we don't use clean-mode so user can see bounds if they want, 
-                // but usually user just wants to see text. Let's use clean mode for realistic preview.
                 const page = createPageElement(loadedData[i], layout, true);
-                // Scale down for preview
-                page.style.transform = "scale(0.5)";
+                page.style.transform = "scale(0.3)";
                 page.style.transformOrigin = "top left";
-                page.style.marginBottom = "-140mm"; // Adjust margin because of scale
+                page.style.marginBottom = "-70%";
 
                 const wrapper = document.createElement('div');
-                wrapper.style.height = "160mm"; // Adjusted height container
-                wrapper.style.marginBottom = "20px";
-                wrapper.style.border = "1px solid #ccc";
+                wrapper.className = 'preview-card';
+                wrapper.style.width = "240px";
+                wrapper.style.height = "350px";
                 wrapper.style.overflow = "hidden";
 
-                const label = document.createElement('div');
-                label.innerHTML = `<strong>第 ${i + 1} 筆</strong>`;
-                label.style.padding = "5px";
-                label.style.background = "#eee";
+                const header = document.createElement('div');
+                header.className = 'preview-card-header';
+                header.textContent = `第 ${i + 1} 筆`;
 
-                wrapper.appendChild(label);
+                wrapper.appendChild(header);
                 wrapper.appendChild(page);
                 container.appendChild(wrapper);
             }
 
-            if (loadedData.length > 5) {
-                const more = document.createElement('p');
-                more.textContent = `... 還有 ${loadedData.length - 5} 筆資料`;
+            if (loadedData.length > 3) {
+                const more = document.createElement('div');
+                more.style.padding = "20px";
+                more.style.color = "#666";
+                more.textContent = `... 還有 ${loadedData.length - 3} 筆資料`;
                 container.appendChild(more);
             }
         }
 
         // --- Batch PDF Generation ---
-
         async function startBatchPDF() {
             if (loadedData.length === 0) return;
 
-            // Security Check: Must have Base64 image
             if (!currentBgBase64) {
-                alert("需手動載入背景圖片以解鎖 PDF 功能！\n\n因為瀏覽器安全限制，請協助：\n1. 點擊「確定」後畫面會自動切換。\n2. 請在閃爍的紅色框框處，選取您的背景圖 (1768757647251.jpg)。");
-                switchTab('config');
-                // Highlight input
+                alert("請先上傳背景圖片！\n\n請切換至「設定」頁面，選取背景圖片。");
+                switchView('config');
                 const bgInput = document.getElementById('bgInput');
                 bgInput.style.border = "3px solid red";
                 bgInput.style.backgroundColor = "#ffe6e6";
-                bgInput.style.transition = "all 0.5s";
-                setTimeout(() => {
-                    bgInput.style.transform = "scale(1.05)";
-                    setTimeout(() => bgInput.style.transform = "scale(1)", 200);
-                }, 100);
                 return;
             }
 
@@ -622,10 +739,9 @@
             const buffer = document.getElementById('render-buffer');
 
             overlay.style.display = 'flex';
-            statusText.textContent = "初始化 PDF...";
+            statusText.textContent = "初始化...";
             progressFill.style.width = "0%";
 
-            // Initialize jsPDF
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({
                 orientation: 'portrait',
@@ -638,20 +754,17 @@
 
             try {
                 for (let i = 0; i < total; i++) {
-                    statusText.textContent = `正在處理第 ${i + 1} / ${total} 頁...`;
-                    const percent = Math.round(((i) / total) * 100);
-                    progressFill.style.width = percent + "%";
+                    statusText.textContent = `處理中 ${i + 1}/${total}`;
+                    progressFill.style.width = Math.round((i / total) * 100) + "%";
 
-                    // 1. Create DOM for this row
                     buffer.innerHTML = '';
                     const pageEl = createPageElement(loadedData[i], layout, true);
                     buffer.appendChild(pageEl);
 
-                    // 2. Wait for image render (if necessary)
                     await waitForImages(pageEl);
 
-                    // 3. Render to Image using dom-to-image at 3x resolution (WYSIWYG)
-                    const scale = 3; // 3x resolution for sharp printing (~288 DPI)
+                    // 3x resolution
+                    const scale = 3;
                     const pageWidth = pageEl.offsetWidth;
                     const pageHeight = pageEl.offsetHeight;
 
@@ -666,28 +779,25 @@
                         }
                     });
 
-                    // 4. Add to PDF
                     const pdfWidth = doc.internal.pageSize.getWidth();
                     const pdfHeight = doc.internal.pageSize.getHeight();
 
                     if (i > 0) doc.addPage();
                     doc.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
 
-                    // Small delay to allow UI update
-                    await new Promise(r => setTimeout(r, 50));
+                    await new Promise(r => setTimeout(r, 30));
                 }
 
-                statusText.textContent = "正在儲存檔案...";
+                statusText.textContent = "儲存中...";
                 progressFill.style.width = "100%";
-                await new Promise(r => setTimeout(r, 100)); // UI delay
+                await new Promise(r => setTimeout(r, 100));
 
-                doc.save('form-output-batch.pdf');
+                doc.save('form-output.pdf');
 
             } catch (err) {
                 console.error(err);
-                alert("產生 PDF 時發生錯誤: " + err.message);
+                alert("錯誤: " + err.message);
             } finally {
-                // Cleanup
                 buffer.innerHTML = '';
                 overlay.style.display = 'none';
             }
@@ -700,13 +810,12 @@
                 if (!img.complete) {
                     promises.push(new Promise(resolve => {
                         img.onload = resolve;
-                        img.onerror = resolve; // proceed anyway
+                        img.onerror = resolve;
                     }));
                 }
             });
             return Promise.all(promises);
         }
-
     </script>
 </body>
 
