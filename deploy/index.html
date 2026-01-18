@@ -525,32 +525,46 @@
 
         // --- Draggable Logic (Mouse + Touch) ---
         function makeDraggable(elmnt) {
-            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            let startX = 0, startY = 0, startTop = 0, startLeft = 0;
 
             // Mouse events
-            elmnt.onmousedown = dragStart;
-            // Touch events
-            elmnt.ontouchstart = dragStart;
+            elmnt.addEventListener('mousedown', dragStart);
+            // Touch events - use passive: false to allow preventDefault
+            elmnt.addEventListener('touchstart', dragStart, { passive: false });
+
+            function getScale() {
+                // Get the current scale of the page container
+                const pageContainer = elmnt.closest('.page-container');
+                if (!pageContainer) return 1;
+                const transform = window.getComputedStyle(pageContainer).transform;
+                if (transform === 'none') return 1;
+                const matrix = new DOMMatrix(transform);
+                return matrix.a; // scaleX
+            }
 
             function dragStart(e) {
                 const rect = elmnt.getBoundingClientRect();
                 const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
-                // Check if resizing (bottom-right corner)
-                const isResizing = (clientX > rect.right - 25 && clientY > rect.bottom - 25);
+                // Check if resizing (bottom-right corner) - skip drag
+                const isResizing = (clientX > rect.right - 20 && clientY > rect.bottom - 20);
                 if (isResizing) return;
 
                 e.preventDefault();
-                pos3 = clientX;
-                pos4 = clientY;
+                e.stopPropagation();
+
+                startX = clientX;
+                startY = clientY;
+                startTop = elmnt.offsetTop;
+                startLeft = elmnt.offsetLeft;
 
                 if (e.touches) {
-                    document.ontouchend = dragEnd;
-                    document.ontouchmove = dragMove;
+                    document.addEventListener('touchmove', dragMove, { passive: false });
+                    document.addEventListener('touchend', dragEnd);
                 } else {
-                    document.onmouseup = dragEnd;
-                    document.onmousemove = dragMove;
+                    document.addEventListener('mousemove', dragMove);
+                    document.addEventListener('mouseup', dragEnd);
                 }
             }
 
@@ -559,20 +573,21 @@
                 const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
-                pos1 = pos3 - clientX;
-                pos2 = pos4 - clientY;
-                pos3 = clientX;
-                pos4 = clientY;
+                const scale = getScale();
 
-                elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
-                elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+                // Calculate movement adjusted for scale
+                const deltaX = (clientX - startX) / scale;
+                const deltaY = (clientY - startY) / scale;
+
+                elmnt.style.top = (startTop + deltaY) + "px";
+                elmnt.style.left = (startLeft + deltaX) + "px";
             }
 
             function dragEnd() {
-                document.onmouseup = null;
-                document.onmousemove = null;
-                document.ontouchend = null;
-                document.ontouchmove = null;
+                document.removeEventListener('mousemove', dragMove);
+                document.removeEventListener('mouseup', dragEnd);
+                document.removeEventListener('touchmove', dragMove);
+                document.removeEventListener('touchend', dragEnd);
             }
         }
 
