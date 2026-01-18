@@ -650,10 +650,20 @@
                     // 2. Wait for image render (if necessary)
                     await waitForImages(pageEl);
 
-                    // 3. Render to Image using dom-to-image (WYSIWYG)
+                    // 3. Render to Image using dom-to-image at 3x resolution (WYSIWYG)
+                    const scale = 3; // 3x resolution for sharp printing (~288 DPI)
+                    const pageWidth = pageEl.offsetWidth;
+                    const pageHeight = pageEl.offsetHeight;
+
                     const imgData = await domtoimage.toJpeg(pageEl, {
                         quality: 0.95,
-                        bgcolor: '#ffffff' // Ensure white background
+                        bgcolor: '#ffffff',
+                        width: pageWidth * scale,
+                        height: pageHeight * scale,
+                        style: {
+                            transform: `scale(${scale})`,
+                            transformOrigin: 'top left'
+                        }
                     });
 
                     // 4. Add to PDF
