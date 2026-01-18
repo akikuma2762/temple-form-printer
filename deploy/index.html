@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>表單列印工具 V3</title>
+    <!-- SheetJS for Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- jsPDF and dom-to-image for high-fidelity PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
+
+    <style>
+        :root {
+            --a4-width-px: 794px;
+            /* 210mm @ 96dpi */
+            --a4-height-px: 1123px;
+            /* 297mm @ 96dpi */
+            --a4-width: 210mm;
+            --a4-height: 297mm;
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #e9ecef;
+            font-family: "Microsoft JhengHei", Arial, sans-serif;
+            color: #333;
+        }
+
+        /* Tabs Navigation */
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 16px;
+            font-weight: bold;
+            color: #666;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            color: #2196F3;
+            border-bottom: 3px solid #2196F3;
+        }
+
+        .tab-btn:hover {
+            color: #2196F3;
+            background-color: rgba(33, 150, 243, 0.05);
+        }
+
+        /* View Containers */
+        .view-section {
+            display: none;
+        }
+
+        .view-section.active {
+            display: block;
+        }
+
+        /* Layout Container */
+        .layout-wrapper {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+
+        /* Side Panel */
+        .side-panel {
+            width: 300px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #444;
+        }
+
+        .control-group input[type="file"] {
+            width: 100%;
+        }
+
+        button {
+            background-color: #2196F3;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 10px;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button.secondary {
+            background-color: #757575;
+        }
+
+        button.success {
+            background-color: #4CAF50;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        /* A4 Page Styles */
+        .page-container {
+            width: var(--a4-width);
+            height: var(--a4-height);
+            background: white;
+            position: relative;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.15);
+            overflow: hidden;
+            margin-bottom: 20px;
+            /* Ensure white background for PDF */
+            background-color: #ffffff;
+            /* Visual A4 boundary indicator */
+            border: 2px dashed #ff6b6b;
+        }
+
+        .background-img {
+            width: 100%;
+            height: 100%;
+            /* Changed from contain to cover to fill A4 without white margins */
+            object-fit: cover;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+
+        /* Draggable / Label Styles */
+        .draggable {
+            position: absolute;
+            border: 2px dashed #2196F3;
+            background: rgba(33, 150, 243, 0.1);
+            cursor: move;
+            z-index: 1;
+            /* Vertical Text Layout */
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            /* Centering */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+
+            font-size: 20px;
+            width: 60px;
+            height: 200px;
+            overflow: hidden;
+            resize: both;
+        }
+
+        .draggable .content {
+            /* Force single line (column) in vertical mode */
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        .grid-label {
+            position: absolute;
+            top: -25px;
+            right: 0;
+            left: 0;
+            background: #2196F3;
+            color: white;
+            font-size: 12px;
+            padding: 2px 5px;
+            text-align: center;
+            pointer-events: none;
+            writing-mode: horizontal-tb;
+        }
+
+        /* Clean styles for export (Applied dynamically) */
+        .draggable.clean-mode {
+            border: none !important;
+            background: transparent !important;
+            resize: none !important;
+        }
+
+        .grid-label.clean-mode {
+            display: none !important;
+        }
+
+        /* Hide dashed border in export mode */
+        .page-container.export-mode {
+            border: none !important;
+        }
+
+        /* Address-specific: Top alignment + horizontal centering */
+        .draggable.top-align {
+            justify-content: flex-start;
+            /* Top aligned in vertical mode */
+            align-items: center;
+            /* Horizontally centered in vertical mode */
+        }
+
+        /* Hidden Buffer for rendering one page at a time */
+        #render-buffer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            /* Fully transparent but rendered */
+            pointer-events: none;
+            z-index: -1000;
+        }
+
+        .alert {
+            padding: 10px;
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+
+        /* Progress Overlay */
+        #progress-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 9999;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        .progress-bar {
+            width: 300px;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 15px;
+            border: 1px solid #555;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #4CAF50;
+            width: 0%;
+            transition: width 0.1s;
+        }
+
+        .status-text {
+            font-size: 18px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Progress Overlay -->
+    <div id="progress-overlay">
+        <div class="status-text" id="status-text">準備中...</div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div style="margin-top: 10px; font-size: 14px; color: #ccc;">為了避免瀏覽器當機，將會一頁一頁處理，請勿關閉視窗。</div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('config')">1. 版面設定 (Layout)</button>
+        <button class="tab-btn" onclick="switchTab('preview')">2. 預覽與下載 (Preview & Download)</button>
+    </div>
+
+    <!-- VIEW 1: CONFIGURATION -->
+    <div id="view-config" class="view-section active">
+        <div class="layout-wrapper">
+            <div class="side-panel">
+                <h3>版面設定</h3>
+
+                <div class="alert">
+                    注意：為了確保 PDF 輸出正確，請務必在此處選取您的背景圖片。
+                </div>
+
+                <div class="control-group">
+                    <label>1. 上傳背景圖片</label>
+                    <input type="file" id="bgInput" accept="image/*" onchange="handleBgUpload(this)">
+                </div>
+
+                <div class="control-group">
+                    <label>2. 調整標籤</label>
+                    <p style="font-size: 0.9em; color: #666;">
+                        請在右側預覽圖中拖曳調整「姓名」與「地址」的位置。<br>
+                        文字已預設為置中對齊。
+                    </p>
+                </div>
+
+                <button class="secondary" onclick="resetPositions()">重置位置</button>
+            </div>
+
+            <!-- Master Editor Canvas -->
+            <div class="page-container" id="editor-canvas">
+                <img id="editor-bg" class="background-img" alt="Background Preview">
+
+                <div class="draggable" id="drag-name" style="top: 100px; left: 140mm;">
+                    <div class="grid-label">姓名</div>
+                    <span class="content">姓名測試</span>
+                </div>
+
+                <div class="draggable top-align" id="drag-address" style="top: 100px; left: 170mm;">
+                    <div class="grid-label">地址</div>
+                    <span class="content">地址測試<br>範例資料</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW 2: PREVIEW & DOWNLOAD -->
+    <div id="view-preview" class="view-section">
+        <div class="layout-wrapper">
+            <div class="side-panel">
+                <h3>資料處理</h3>
+                <div class="control-group">
+                    <label>1. 上傳資料 (Excel/CSV)</label>
+                    <input type="file" id="dataReader" accept=".xlsx, .xls, .csv" onchange="handleDataUpload(this)">
+                </div>
+
+                <div class="control-group" id="data-stats" style="display:none;">
+                    <label>資料狀態</label>
+                    <p id="record-count">已載入 0 筆資料</p>
+                </div>
+
+                <button class="success" onclick="startBatchPDF()" id="btn-download" disabled>下載合併 PDF</button>
+                <p style="font-size: 0.8em; color: #888;">
+                    注意：系統會逐頁生成以確保 150+ 頁的穩定性。請耐心等候。
+                </p>
+            </div>
+
+            <div id="preview-list">
+                <div style="padding: 40px; text-align: center; color: #888;">
+                    請先上傳資料檔案以檢視預覽。
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Buffer Container -->
+    <div id="render-buffer"></div>
+
+    <script>
+        // --- Global State ---
+        let currentBgBase64 = null;
+        let loadedData = [];
+
+        // --- Initialization ---
+        // Try fallback image
+        const fallbackImg = './1768757647251.jpg';
+        const imgEl = document.getElementById('editor-bg');
+        imgEl.onerror = () => { console.log("Default image not found, user needs to upload."); };
+        imgEl.src = fallbackImg;
+
+        // --- Tabs ---
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.view-section').forEach(view => view.classList.remove('active'));
+
+            if (tabName === 'config') {
+                document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+                document.getElementById('view-config').classList.add('active');
+            } else {
+                document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+                document.getElementById('view-preview').classList.add('active');
+                updatePreview();
+            }
+        }
+
+        // --- Background Image Handling ---
+        function handleBgUpload(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    currentBgBase64 = e.target.result;
+                    document.getElementById('editor-bg').src = currentBgBase64;
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        // --- Draggable Logic ---
+        function makeDraggable(elmnt) {
+            var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            elmnt.onmousedown = dragMouseDown;
+
+            function dragMouseDown(e) {
+                const rect = elmnt.getBoundingClientRect();
+                const isResizing = (e.clientX > rect.right - 20 && e.clientY > rect.bottom - 20);
+                if (isResizing) return;
+                e = e || window.event;
+                e.preventDefault();
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = elementDrag;
+            }
+
+            function elementDrag(e) {
+                e = e || window.event;
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+                elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+            }
+
+            function closeDragElement() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        }
+
+        document.querySelectorAll('.draggable').forEach(makeDraggable);
+
+        function resetPositions() {
+            const name = document.getElementById('drag-name');
+            const addr = document.getElementById('drag-address');
+            Object.assign(name.style, { top: '100px', left: '140mm', width: '60px', height: '200px' });
+            Object.assign(addr.style, { top: '100px', left: '170mm', width: '60px', height: '200px' });
+        }
+
+        // --- Data Handling ---
+        async function handleDataUpload(input) {
+            if (!input.files.length) return;
+            const file = input.files[0];
+            loadedData = [];
+            document.getElementById('btn-download').disabled = true;
+
+            try {
+                loadedData = await readExcelOrCSV(file);
+                document.getElementById('data-stats').style.display = 'block';
+                document.getElementById('record-count').textContent = `已載入 ${loadedData.length} 筆資料`;
+                document.getElementById('btn-download').disabled = false;
+                updatePreview();
+            } catch (err) {
+                alert('讀取檔案失敗: ' + err.message);
+            }
+        }
+
+        function readExcelOrCSV(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array', codepage: 65001 });
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(firstSheet);
+                        resolve(json);
+                    } catch (e) { reject(e); }
+                };
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        // --- Layout Helper ---
+        function getLayoutConfig() {
+            const nameEl = document.getElementById('drag-name');
+            const addrEl = document.getElementById('drag-address');
+            return {
+                name: {
+                    top: nameEl.style.top,
+                    left: nameEl.style.left,
+                    width: nameEl.style.width,
+                    height: nameEl.style.height
+                },
+                address: {
+                    top: addrEl.style.top,
+                    left: addrEl.style.left,
+                    width: addrEl.style.width,
+                    height: addrEl.style.height
+                }
+            };
+        }
+
+        function createPageElement(row, layout, forExport) {
+            let nameVal = '';
+            let addrVal = '';
+            // Fuzzy match keys
+            for (let k in row) {
+                const key = k.toString().trim();
+                if (key.includes('姓名') || key.toLowerCase() === 'name') nameVal = row[k];
+                if (key.includes('地址') || key.toLowerCase() === 'address') addrVal = row[k];
+            }
+
+            const page = document.createElement('div');
+            page.className = 'page-container';
+            if (forExport) { page.classList.add('export-mode'); }
+
+            const bg = document.createElement('img');
+            bg.src = currentBgBase64 || document.getElementById('editor-bg').src;
+            bg.className = 'background-img';
+            page.appendChild(bg);
+
+            if (nameVal) {
+                const div = document.createElement('div');
+                div.className = 'draggable';
+                if (forExport) { div.classList.add('clean-mode'); }
+                Object.assign(div.style, layout.name);
+                div.innerHTML = `<span class="content">${nameVal}</span>`;
+                page.appendChild(div);
+            }
+
+            if (addrVal) {
+                const div = document.createElement('div');
+                div.className = 'draggable top-align';
+                if (forExport) { div.classList.add('clean-mode'); }
+                Object.assign(div.style, layout.address);
+                div.innerHTML = `<span class="content">${addrVal}</span>`;
+                page.appendChild(div);
+            }
+
+            return page;
+        }
+
+        function updatePreview() {
+            const container = document.getElementById('preview-list');
+            container.innerHTML = '';
+            if (loadedData.length === 0) {
+                container.innerHTML = '<div style="padding: 40px; text-align: center; color: #888;">請上傳資料</div>';
+                return;
+            }
+
+            const layout = getLayoutConfig();
+            const previewLimit = Math.min(loadedData.length, 5);
+
+            for (let i = 0; i < previewLimit; i++) {
+                // For preview, we don't use clean-mode so user can see bounds if they want, 
+                // but usually user just wants to see text. Let's use clean mode for realistic preview.
+                const page = createPageElement(loadedData[i], layout, true);
+                // Scale down for preview
+                page.style.transform = "scale(0.5)";
+                page.style.transformOrigin = "top left";
+                page.style.marginBottom = "-140mm"; // Adjust margin because of scale
+
+                const wrapper = document.createElement('div');
+                wrapper.style.height = "160mm"; // Adjusted height container
+                wrapper.style.marginBottom = "20px";
+                wrapper.style.border = "1px solid #ccc";
+                wrapper.style.overflow = "hidden";
+
+                const label = document.createElement('div');
+                label.innerHTML = `<strong>第 ${i + 1} 筆</strong>`;
+                label.style.padding = "5px";
+                label.style.background = "#eee";
+
+                wrapper.appendChild(label);
+                wrapper.appendChild(page);
+                container.appendChild(wrapper);
+            }
+
+            if (loadedData.length > 5) {
+                const more = document.createElement('p');
+                more.textContent = `... 還有 ${loadedData.length - 5} 筆資料`;
+                container.appendChild(more);
+            }
+        }
+
+        // --- Batch PDF Generation ---
+
+        async function startBatchPDF() {
+            if (loadedData.length === 0) return;
+
+            // Security Check: Must have Base64 image
+            if (!currentBgBase64) {
+                alert("需手動載入背景圖片以解鎖 PDF 功能！\n\n因為瀏覽器安全限制，請協助：\n1. 點擊「確定」後畫面會自動切換。\n2. 請在閃爍的紅色框框處，選取您的背景圖 (1768757647251.jpg)。");
+                switchTab('config');
+                // Highlight input
+                const bgInput = document.getElementById('bgInput');
+                bgInput.style.border = "3px solid red";
+                bgInput.style.backgroundColor = "#ffe6e6";
+                bgInput.style.transition = "all 0.5s";
+                setTimeout(() => {
+                    bgInput.style.transform = "scale(1.05)";
+                    setTimeout(() => bgInput.style.transform = "scale(1)", 200);
+                }, 100);
+                return;
+            }
+
+            const overlay = document.getElementById('progress-overlay');
+            const statusText = document.getElementById('status-text');
+            const progressFill = document.getElementById('progress-fill');
+            const buffer = document.getElementById('render-buffer');
+
+            overlay.style.display = 'flex';
+            statusText.textContent = "初始化 PDF...";
+            progressFill.style.width = "0%";
+
+            // Initialize jsPDF
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            const layout = getLayoutConfig();
+            const total = loadedData.length;
+
+            try {
+                for (let i = 0; i < total; i++) {
+                    statusText.textContent = `正在處理第 ${i + 1} / ${total} 頁...`;
+                    const percent = Math.round(((i) / total) * 100);
+                    progressFill.style.width = percent + "%";
+
+                    // 1. Create DOM for this row
+                    buffer.innerHTML = '';
+                    const pageEl = createPageElement(loadedData[i], layout, true);
+                    buffer.appendChild(pageEl);
+
+                    // 2. Wait for image render (if necessary)
+                    await waitForImages(pageEl);
+
+                    // 3. Render to Image using dom-to-image (WYSIWYG)
+                    const imgData = await domtoimage.toJpeg(pageEl, {
+                        quality: 0.95,
+                        bgcolor: '#ffffff' // Ensure white background
+                    });
+
+                    // 4. Add to PDF
+                    const pdfWidth = doc.internal.pageSize.getWidth();
+                    const pdfHeight = doc.internal.pageSize.getHeight();
+
+                    if (i > 0) doc.addPage();
+                    doc.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+
+                    // Small delay to allow UI update
+                    await new Promise(r => setTimeout(r, 50));
+                }
+
+                statusText.textContent = "正在儲存檔案...";
+                progressFill.style.width = "100%";
+                await new Promise(r => setTimeout(r, 100)); // UI delay
+
+                doc.save('form-output-batch.pdf');
+
+            } catch (err) {
+                console.error(err);
+                alert("產生 PDF 時發生錯誤: " + err.message);
+            } finally {
+                // Cleanup
+                buffer.innerHTML = '';
+                overlay.style.display = 'none';
+            }
+        }
+
+        function waitForImages(element) {
+            const imgs = element.querySelectorAll('img');
+            const promises = [];
+            imgs.forEach(img => {
+                if (!img.complete) {
+                    promises.push(new Promise(resolve => {
+                        img.onload = resolve;
+                        img.onerror = resolve; // proceed anyway
+                    }));
+                }
+            });
+            return Promise.all(promises);
+        }
+
+    </script>
+</body>
+
+</html>
